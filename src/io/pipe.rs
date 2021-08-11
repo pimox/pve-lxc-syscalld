@@ -7,7 +7,6 @@ use std::task::{Context, Poll};
 
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
-use crate::error::io_err_other;
 use crate::io::polled_fd::PolledFd;
 use crate::io::rw_traits;
 use crate::tools::Fd;
@@ -90,10 +89,13 @@ impl<RW: rw_traits::HasRead> AsyncRead for Pipe<RW> {
     ) -> Poll<io::Result<()>> {
         self.fd.wrap_read(cx, || {
             let fd = self.as_raw_fd();
-            let buf = buf.initialize_unfilled();
-            let size = libc::size_t::try_from(buf.len()).map_err(io_err_other)?;
-            c_result!(unsafe { libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, size) })
-                .map(|_| ())
+            let mem = buf.initialize_unfilled();
+            c_result!(unsafe { libc::read(fd, mem.as_mut_ptr() as *mut libc::c_void, mem.len()) })
+                .map(|received| {
+                    if received > 0 {
+                        buf.advance(received as usize)
+                    }
+                })
         })
     }
 }
@@ -106,8 +108,7 @@ impl<RW: rw_traits::HasWrite> AsyncWrite for Pipe<RW> {
     ) -> Poll<io::Result<usize>> {
         self.fd.wrap_write(cx, || {
             let fd = self.as_raw_fd();
-            let size = libc::size_t::try_from(buf.len()).map_err(io_err_other)?;
-            c_result!(unsafe { libc::write(fd, buf.as_ptr() as *const libc::c_void, size) })
+            c_result!(unsafe { libc::write(fd, buf.as_ptr() as *const libc::c_void, buf.len()) })
                 .map(|res| res as usize)
         })
     }

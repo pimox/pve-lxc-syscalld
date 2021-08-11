@@ -34,7 +34,7 @@ cargo-build:
 
 .PHONY: test
 test:
-	cargo test
+	cargo test $(CARGO_BUILD_ARGS)
 
 .PHONY: check
 check: test
@@ -76,6 +76,12 @@ deb: $(DEB)
 $(DEB): build
 	cd build; dpkg-buildpackage -b -us -uc --no-pre-clean --build-profiles=nodoc
 	lintian $(DEB)
+
+upload: deb
+	dcmd --deb rust-pve-lxc-syscalld_*.changes \
+	    | grep -v '.changes$$' \
+	    | tar -cf- -T- \
+	    | ssh -X repoman@repo.proxmox.com upload --product pve --dist bullseye
 
 .PHONY: dsc
 dsc: $(DSC)
